@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 投研辦公室 v2.0｜機構級投審會引擎</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for Isometric 3D Voxel Office -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts: Inter, Noto Sans TC & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #0B0F17;
+            color: #E2E8F0;
+            overflow: hidden;
+            user-select: none;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom Dark Financial Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1E293B;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+
+        /* Floating 3D Labels & Speech Bubbles */
+        .voxel-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .agent-ui-anchor {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: opacity 0.25s ease;
+            pointer-events: auto;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .agent-ui-anchor:hover {
+            z-index: 30;
+        }
+        .speech-bubble {
+            background: #F8FAFC;
+            color: #0F172A;
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-size: 11.5px;
+            font-weight: 600;
+            line-height: 1.45;
+            max-width: 230px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.15);
+            margin-bottom: 6px;
+            position: relative;
+            text-align: center;
+            animation: floatBubble 2.8s ease-in-out infinite;
+            transition: all 0.2s ease;
+        }
+        .speech-bubble.debate-alert {
+            background: #FEF2F2;
+            color: #991B1B;
+            border: 1.5px solid #EF4444;
+        }
+        .speech-bubble.debate-alert::after {
+            border-color: #EF4444 transparent transparent transparent;
+        }
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px 6px 0;
+            border-style: solid;
+            border-color: #F8FAFC transparent transparent transparent;
+        }
+        .agent-tag {
+            background: rgba(19, 25, 38, 0.94);
+            border: 1px solid #334155;
+            backdrop-filter: blur(6px);
+            color: #F1F5F9;
+            padding: 2px 9px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .agent-ui-anchor:hover .agent-tag {
+            transform: scale(1.07);
+            border-color: #F59E0B;
+        }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-idle { background-color: #3B82F6; box-shadow: 0 0 6px #3B82F6; }
+        .status-working { background-color: #F59E0B; box-shadow: 0 0 8px #F59E0B; animation: pulseDot 0.9s infinite; }
+        .status-debate { background-color: #EF4444; box-shadow: 0 0 9px #EF4444; animation: pulseDot 0.6s infinite; }
+        .status-done { background-color: #10B981; box-shadow: 0 0 8px #10B981; }
+
+        @keyframes floatBubble {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.45; transform: scale(1.35); }
+        }
+
+        /* Tilt-shift / Depth of field visual effect */
+        .dof-active canvas {
+            filter: contrast(1.08) saturate(1.12);
+        }
+        .dof-vignette {
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 46%, rgba(7, 10, 16, 0.78) 100%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .dof-active .dof-vignette {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-[#0B0F17] text-slate-200">
+
+    <!-- Top Navigation & Institutional Status Bar -->
+    <header class="bg-[#131926] border-b border-[#1E293B] px-3 sm:px-5 py-2.5 flex flex-col gap-2 z-20 shrink-0">
+        <!-- Row 1: Brand Title, Status Pill & Action Controls -->
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-3 sm:gap-4 overflow-x-auto">
+                <div class="flex items-center gap-2 border-b-2 border-[#F59E0B] pb-1 text-white font-bold text-xs sm:text-sm tracking-wide whitespace-nowrap">
+                    <span class="w-2 h-2 rounded-sm bg-[#F59E0B] inline-block"></span>
+                    AI 投研辦公室 v2.0｜機構級投審會引擎
+                </div>
+                <div id="engine-mode-badge" class="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#0B0F17] border border-[#1E293B] text-[11px] font-medium text-emerald-400 whitespace-nowrap">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Gemini 2.5 Flash + Search</span>
+                </div>
+            </div>
+
+            <!-- Right Controls: API Settings, IC History, DoF Toggle -->
+            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button id="btn-open-api-modal" class="px-2.5 py-1.5 rounded-lg bg-[#0B0F17] hover:bg-slate-800 border border-[#334155] text-amber-400 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+                    <span>⚙️ API 設定</span>
+                    <span id="api-key-indicator" class="w-2 h-2 rounded-full bg-blue-400"></span>
+                </button>
+                <button id="btn-header-history" class="px-2.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition">
+                    <span>📑 投審會紀錄</span>
+                    <span id="header-report-count" class="px-1.5 py-0.2 bg-[#3B82F6] text-white text-[10px] font-bold rounded-full">1</span>
+                </button>
+                <button id="btn-toggle-dof" title="景深模式" class="px-2.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-xs font-medium transition">
+                    景深模式
+                </button>
+            </div>
+        </div>
+
+        <!-- Row 2: Live IC Committee Phase & Market Ticker -->
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg px-3 py-1.5 text-xs">
+            <div class="flex items-center gap-3 overflow-x-auto w-full lg:w-auto">
+                <div class="flex items-center gap-1.5 font-semibold shrink-0">
+                    <span id="ic-phase-dot" class="w-2.5 h-2.5 rounded-full bg-[#3B82F6] inline-block"></span>
+                    <span id="ic-phase-label" class="text-blue-400">閒置待命</span>
+                </div>
+                <span class="text-slate-700">|</span>
+                <div id="ic-live-ticker" class="text-slate-300 truncate">
+                    投審會成員已就位：點擊 3D 分析師檢視考核 KPI，或下方下達機構級研究指令
+                </div>
+            </div>
+            <div class="hidden xl:flex items-center gap-4 text-[11px] font-mono-num text-slate-400 shrink-0">
+                <span>TAIEX <strong class="text-[#EF4444]">▲ 23,540 (+1.28%)</strong></span>
+                <span>SOX 費半 <strong class="text-[#10B981]">▲ 5,215 (+1.64%)</strong></span>
+                <span>US10Y <strong class="text-[#F59E0B]">4.26%</strong></span>
+                <span>USD/TWD <strong class="text-slate-200">32.12</strong></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area: Isometric 3D Voxel Office + Right CIO Command Console -->
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+        
+        <!-- Left / Center: Isometric 3D Voxel Office Canvas -->
+        <section id="office-viewport" class="relative flex-1 h-[50vh] lg:h-full bg-[#0B0F17] overflow-hidden cursor-grab active:cursor-grabbing">
+            <div id="three-container" class="w-full h-full"></div>
+            <div class="dof-vignette absolute inset-0"></div>
+            <div id="voxel-overlay" class="voxel-overlay"></div>
+
+            <!-- Top-Left 4-Stage IC Progress Bar (Visible during active research) -->
+            <div id="ic-stage-banner" class="hidden absolute top-3 left-3 right-3 sm:right-auto sm:w-[420px] bg-[#131926]/95 backdrop-blur-md border border-[#334155] rounded-xl p-3 shadow-2xl z-20">
+                <div class="flex items-center justify-between text-xs font-bold mb-2">
+                    <span id="ic-stage-title" class="text-amber-400 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                        階段一：聯網數據搜集與初稿撰寫
+                    </span>
+                    <span id="ic-stage-step" class="font-mono-num text-slate-400">STEP 1 / 4</span>
+                </div>
+                <div class="w-full bg-[#0B0F17] h-2 rounded-full overflow-hidden border border-[#1E293B]">
+                    <div id="ic-stage-bar" class="bg-gradient-to-r from-[#3B82F6] via-[#F59E0B] to-[#10B981] h-full transition-all duration-500" style="width: 25%"></div>
+                </div>
+                <div id="ic-stage-desc" class="text-[11px] text-slate-300 mt-1.5 truncate">
+                    Sophia 正在調閱最新財報毛利率與估值倍數...
+                </div>
+            </div>
+
+            <!-- Bottom-Left Camera & Zone Controls -->
+            <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-2 z-10">
+                <div class="bg-[#131926]/90 backdrop-blur-md border border-[#1E293B] rounded-lg px-3 py-1.5 text-[11px] text-slate-400 flex items-center gap-3 shadow-lg">
+                    <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#F59E0B]"></span>投研交易區</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#3B82F6]"></span>投審會休息室</span>
+                    <span class="hidden sm:inline text-slate-500">• 拖曳旋轉 / 滾輪縮放 / 點擊小人看檔案</span>
+                </div>
+                <button id="btn-reset-cam" class="bg-[#131926]/90 hover:bg-[#1E293B] border border-[#1E293B] text-slate-300 rounded-lg px-2.5 py-1.5 text-[11px] font-medium shadow-lg transition">
+                    重置視角
+                </button>
+            </div>
+        </section>
+
+        <!-- Right Sidebar: CIO Command Console & IC Roster -->
+        <aside class="w-full lg:w-[430px] xl:w-[460px] h-[50vh] lg:h-full bg-[#131926] border-t lg:border-t-0 lg:border-l border-[#1E293B] flex flex-col z-20 shrink-0">
+            
+            <!-- Sidebar Navigation Tabs -->
+            <div class="grid grid-cols-2 border-b border-[#1E293B] bg-[#0B0F17] p-1.5 gap-1.5 shrink-0">
+                <button id="tab-console" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-[#1E293B] text-white shadow-sm transition flex items-center justify-center gap-1.5">
+                    <span>🎯 CIO 任務指派控制台</span>
+                </button>
+                <button id="tab-archive" class="py-1.5 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5">
+                    <span>📂 投審會報告庫</span>
+                    <span id="sidebar-report-badge" class="px-1.5 py-0.2 bg-[#3B82F6] text-white text-[10px] rounded-full">1</span>
+                </button>
+            </div>
+
+            <!-- Panel 1: CIO Task Assignment & Team Roster -->
+            <div id="panel-console" class="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-4">
+                
+                <!-- Custom Research Input Box -->
+                <div class="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3.5 space-y-2.5 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <label for="research-input" class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                            <span>⚡ 下達機構級投研指令</span>
+                        </label>
+                        <span id="grounding-status-tag" class="text-[10px] px-2 py-0.5 rounded bg-[#131926] border border-[#1E293B] text-emerald-400 font-mono-num">
+                            SEARCH GROUNDING: ON
+                        </span>
+                    </div>
+                    <textarea id="research-input" rows="2" placeholder="輸入任意台股/美股代號、ETF 或總經地緣議題...&#10;例如：分析台積電 (2330) 2奈米進度與 CoWoS 擴產對 2027 年 EPS 貢獻" class="w-full bg-[#131926] border border-[#334155] focus:border-[#F59E0B] focus:outline-none rounded-lg p-2.5 text-xs text-slate-100 placeholder-slate-500 resize-none leading-relaxed"></textarea>
+                    
+                    <button id="btn-start-ic" class="w-full bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] hover:from-[#3B82F6] hover:to-[#2563EB] text-white font-bold text-xs py-2.5 px-4 rounded-lg shadow-lg transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span>召開投審會（全員啟動研究與多空辯論）</span>
+                    </button>
+                </div>
+
+                <!-- 4 High-Value Preset Research Buttons -->
+                <div class="space-y-2">
+                    <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>精選機構級研究專題（一鍵啟動）</span>
+                        <span class="text-[10px] text-slate-500">含 CRO 反方壓力測試</span>
+                    </div>
+                    <div class="space-y-2">
+                        <button data-topic="台積電 (2330) 與 AI 供應鏈估值與法說前瞻" class="preset-topic-btn w-full text-left bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-[#F59E0B]/60 rounded-xl p-2.5 transition group flex items-center justify-between gap-2">
+                            <div>
+                                <div class="text-xs font-bold text-slate-100 group-hover:text-amber-300 transition">🇹🇼 台積電 (2330) 與 AI 供應鏈估值與法說前瞻</div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">拆解先進製程毛利率、CoWoS 產能與本益比區間</div>
+                            </div>
+                            <span class="text-slate-500 group-hover:text-amber-400 text-xs shrink-0">啟動 ➔</span>
+                        </button>
+
+                        <button data-topic="NVIDIA (NVDA) 財報與 CSP 資本支出持續性壓力測試" class="preset-topic-btn w-full text-left bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-[#3B82F6]/60 rounded-xl p-2.5 transition group flex items-center justify-between gap-2">
+                            <div>
+                                <div class="text-xs font-bold text-slate-100 group-hover:text-blue-300 transition">🇺🇸 NVIDIA (NVDA) 財報與 CSP 資本支出持續性壓力測試</div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">檢驗雲端巨頭 AI ROI 變現能力與庫存週轉風險</div>
+                            </div>
+                            <span class="text-slate-500 group-hover:text-blue-400 text-xs shrink-0">啟動 ➔</span>
+                        </button>
+
+                        <button data-topic="Fed 利率路徑、美債殖利率與亞幣資金流向" class="preset-topic-btn w-full text-left bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-[#10B981]/60 rounded-xl p-2.5 transition group flex items-center justify-between gap-2">
+                            <div>
+                                <div class="text-xs font-bold text-slate-100 group-hover:text-emerald-300 transition">🏦 Fed 利率路徑、美債殖利率與亞幣資金流向</div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">量化利率點陣圖對科技股估值倍數的實質衝擊</div>
+                            </div>
+                            <span class="text-slate-500 group-hover:text-emerald-400 text-xs shrink-0">啟動 ➔</span>
+                        </button>
+
+                        <button data-topic="美中晶片關稅升級與台海供應鏈對沖劇本" class="preset-topic-btn w-full text-left bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-[#EF4444]/60 rounded-xl p-2.5 transition group flex items-center justify-between gap-2">
+                            <div>
+                                <div class="text-xs font-bold text-slate-100 group-hover:text-rose-300 transition">🛡️ 美中晶片關稅升級與台海供應鏈對沖劇本</div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">極端地緣黑天鵝情境模擬與投資組合避險配置</div>
+                            </div>
+                            <span class="text-slate-500 group-hover:text-rose-400 text-xs shrink-0">啟動 ➔</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Institutional IC Team Roster -->
+                <div class="space-y-2 pt-1">
+                    <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>投審會核心成員（點擊查看個人 KPI 檔案）</span>
+                        <span class="text-[10px] text-amber-400/90">INSTITUTIONAL TEAM</span>
+                    </div>
+                    <div id="ic-roster-container" class="space-y-2">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 2: IC Report Archive -->
+            <div id="panel-archive" class="hidden flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-2.5">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-bold text-slate-200">投審會正式決議備忘錄</span>
+                    <span class="text-[11px] text-slate-500">點擊閱讀完整報告</span>
+                </div>
+                <div id="archive-list-container" class="space-y-2.5">
+                    <!-- Rendered dynamically -->
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- ========================================================================
+         MODAL 1: API SETTINGS MODAL (Gemini API Key & Grounding Config)
+         ======================================================================== -->
+    <div id="api-settings-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-[#131926] border border-[#334155] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-5 py-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-amber-400 text-base">⚙️</span>
+                    <h3 class="text-sm font-bold text-white">Gemini API 與即時聯網設定</h3>
+                </div>
+                <button id="btn-close-api-modal" class="text-slate-400 hover:text-white p-1 rounded-lg">✕</button>
+            </div>
+
+            <div class="p-5 space-y-4 text-xs">
+                <div class="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3 text-slate-300 leading-relaxed">
+                    輸入您的 <strong class="text-amber-400">Google Gemini API Key</strong> 後，四位分析師將直接透過 <code class="text-blue-400">gemini-2.5-flash</code> 搭配 <strong class="text-emerald-400">Google Search Grounding</strong> 聯網抓取最新台美股財報、新聞與總經數據進行真實推理。
+                    <div class="text-[11px] text-slate-500 mt-1">※ 金鑰僅儲存於您瀏覽器的 localStorage 中，絕不會傳送至任何第三方伺服器。</div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label for="input-api-key" class="block font-semibold text-slate-200">Gemini API Key（選填）</label>
+                    <input type="password" id="input-api-key" placeholder="AIzaSy...（留空則使用系統內建環境或高擬真推演模式）" class="w-full bg-[#0B0F17] border border-[#334155] focus:border-[#F59E0B] focus:outline-none rounded-lg px-3 py-2.5 text-slate-100 font-mono-num">
+                </div>
+
+                <div class="space-y-1.5">
+                    <label for="select-gemini-model" class="block font-semibold text-slate-200">推理模型選擇</label>
+                    <select id="select-gemini-model" class="w-full bg-[#0B0F17] border border-[#334155] focus:border-[#F59E0B] focus:outline-none rounded-lg px-3 py-2.5 text-slate-100">
+                        <option value="gemini-2.5-flash">gemini-2.5-flash（推薦：高速聯網與機構分析）</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro（深度複雜推理）</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center justify-between bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3">
+                    <div>
+                        <div class="font-semibold text-slate-200">Google Search 即時聯網 (Grounding)</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">允許分析師搜尋最新新聞、股價與總經數據</div>
+                    </div>
+                    <input type="checkbox" id="checkbox-grounding" checked class="w-4 h-4 accent-[#10B981] cursor-pointer">
+                </div>
+            </div>
+
+            <div class="px-5 py-3.5 bg-[#0B0F17] border-t border-[#1E293B] flex items-center justify-between gap-2">
+                <button id="btn-clear-api-key" class="px-3 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-950/40 transition">
+                    清除金鑰
+                </button>
+                <div class="flex items-center gap-2">
+                    <button id="btn-cancel-api" class="px-3.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-xs font-medium transition">
+                        取消
+                    </button>
+                    <button id="btn-save-api" class="px-4 py-1.5 rounded-lg bg-[#F59E0B] hover:bg-amber-400 text-slate-950 text-xs font-bold transition shadow">
+                        儲存設定
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================
+         MODAL 2: INSTITUTIONAL IC REPORT MODAL (Full Wall Street Spec Report)
+         ======================================================================== -->
+    <div id="ic-report-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-5">
+        <div class="bg-[#131926] border border-[#334155] rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            <!-- Report Header -->
+            <div class="px-5 py-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-start justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            INVESTMENT COMMITTEE MEMORANDUM
+                        </span>
+                        <span id="rep-source-badge" class="px-2 py-0.5 text-[10px] font-mono-num rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            LIVE SEARCH GROUNDED
+                        </span>
+                        <span id="rep-time" class="text-[11px] text-slate-400 font-mono-num">2026/11/13 09:45</span>
+                    </div>
+                    <h2 id="rep-title" class="text-base sm:text-xl font-bold text-white mt-1.5 leading-snug">
+                        台積電 (2330) 與 AI 供應鏈估值與法說前瞻
+                    </h2>
+                </div>
+                <button id="btn-close-report" class="p-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-300 hover:text-white transition shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Report Body -->
+            <div id="rep-body" class="p-4 sm:p-6 overflow-y-auto space-y-5 text-sm leading-relaxed text-slate-300">
+                <!-- Populated dynamically -->
+            </div>
+
+            <!-- Report Footer -->
+            <div class="px-5 py-3 bg-[#0B0F17] border-t border-[#1E293B] flex flex-wrap items-center justify-between gap-3">
+                <span class="text-[11px] text-slate-500">AI 投研辦公室 v2.0 投審會決議文件 • 投資決策請審慎評估風險</span>
+                <div class="flex items-center gap-2">
+                    <button id="btn-copy-md" class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-[#334155] transition">
+                        📋 複製 Markdown 報告
+                    </button>
+                    <button id="btn-export-md" class="px-3 py-1.5 rounded-lg bg-[#10B981]/20 hover:bg-[#10B981]/30 text-emerald-300 text-xs font-semibold border border-[#10B981]/40 transition">
+                        ⬇️ 匯出 .md 檔
+                    </button>
+                    <button id="btn-done-report" class="px-4 py-1.5 rounded-lg bg-[#3B82F6] hover:bg-blue-500 text-white text-xs font-bold transition">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================
+         MODAL 3: ANALYST PROFILE & KPI MODAL (Clicked on 3D Character)
+         ======================================================================== -->
+    <div id="analyst-profile-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-[#131926] border border-[#334155] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div id="profile-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast-box" class="fixed bottom-5 right-5 z-50 pointer-events-none transform translate-y-12 opacity-0 transition-all duration-300">
+        <div class="bg-[#131926] border border-[#334155] text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2">
+            <span id="toast-icon">✅</span>
+            <span id="toast-text">操作完成</span>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. INSTITUTIONAL IC ANALYST TEAM ROSTER (全新機構級投審會成員)
+         * ============================================================================
+         */
+        const IC_TEAM = [
+            {
+                id: 'victor',
+                name: 'VICTOR',
+                role: '首席投資長 (CIO)',
+                background: '前外資對沖基金操盤手 • 15 年跨資產組合管理經驗',
+                specialty: '全局資產配置・最終拍板多空方向・風險報酬比定價',
+                kpiStandard: '禁止給出模糊建議，必須明確定義評級、建議資金水位、進場區間與硬性停損點。',
+                outfitColor: '#374151', // Dark Charcoal Suit
+                accentColor: '#F59E0B', // Gold Tie
+                badgeClass: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
+                deskPos: { x: -4.2, z: -2.2 },
+                loungePos: { x: 2.1, z: 2.2 },
+                loungeRot: -0.35,
+                idleQuotes: [
+                    '沒有明確風險報酬比（R/R > 2.5）的交易，投審會一律駁回。',
+                    '正在檢視整體投資組合的 Beta 曝險與現金防禦水位。',
+                    '下達研究指令，我來召集 Sophia、Marcus 與 Elena 開會。'
+                ]
+            },
+            {
+                id: 'sophia',
+                name: 'SOPHIA',
+                role: '台美科技產業分析師',
+                background: '前外資券商半導體首席分析師 • 專精晶圓代工與 AI 伺服器供應鏈',
+                specialty: '台積電先進製程・美股科技巨頭財報・毛利率與估值拆解',
+                kpiStandard: '嚴禁只看技術面喊盤，必須拆解營收動能、毛利率變化與同業 Forward PE 估值倍數。',
+                outfitColor: '#881337', // Burgundy Blazer
+                accentColor: '#FDA4AF',
+                badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+                deskPos: { x: -1.5, z: -2.2 },
+                loungePos: { x: 3.3, z: 2.2 },
+                loungeRot: -0.15,
+                idleQuotes: [
+                    '正在追蹤 CSP 雲端巨頭最新一季 CapEx 資本支出指引。',
+                    '先進封裝 CoWoS 產能利用率仍是台股供應鏈的核心定價錨點。',
+                    '估值必須回歸自由現金流與真實 EPS 成長率檢驗。'
+                ]
+            },
+            {
+                id: 'marcus',
+                name: 'MARCUS',
+                role: '全球總經與利率策略師',
+                background: '前央行外匯儲備與主權債交易員 • 專攻全球流動性週期',
+                specialty: 'Fed 利率點陣圖・CPI/PCE 通膨・美債殖利率與亞幣資金流',
+                kpiStandard: '必須將總經數據轉化為「估值倍數擴張或壓縮（PE Re-rating）」的量化影響。',
+                outfitColor: '#1E3A8A', // Navy Blue Shirt
+                accentColor: '#93C5FD',
+                badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+                deskPos: { x: 1.2, z: -2.2 },
+                loungePos: { x: 4.5, z: 2.2 },
+                loungeRot: 0.15,
+                idleQuotes: [
+                    '美國 10 年期實質利率變動，直接決定高本益比科技股的估值天花板。',
+                    '密切監控美元指數與日圓利差交易（Carry Trade）的邊際變化。',
+                    '核心服務通膨黏性是聯準會降息節奏的最大變數。'
+                ]
+            },
+            {
+                id: 'elena',
+                name: 'ELENA',
+                role: '地緣政治與風控長 (CRO)',
+                background: '前主權基金地緣風險顧問 • 投審會專職「反方辯手（魔鬼代言人）」',
+                specialty: '美中晶片關稅禁令・台海與能源航道・極端情境壓力測試',
+                kpiStandard: '專門挑出研究員報告中的樂觀盲點，強制設計下行風險劇本與對沖工具。',
+                outfitColor: '#065F46', // Dark Emerald Trench Coat
+                accentColor: '#34D399',
+                badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                deskPos: { x: 3.9, z: -2.2 },
+                loungePos: { x: 5.7, z: 2.2 },
+                loungeRot: 0.35,
+                idleQuotes: [
+                    '當市場共識高度一致看多時，就是我們啟動反方壓力測試的時刻。',
+                    '正在評估新一輪半導體出口管制與關稅壁壘對毛利率的衝擊。',
+                    '任何部位進場前，必須先寫好黑天鵝爆發時的對沖撤退劇本。'
+                ]
+            }
+        ];
+
+        // API Configuration State (Stored safely in localStorage)
+        const apiConfig = {
+            apiKey: localStorage.getItem('ai_ic_gemini_key') || '',
+            model: localStorage.getItem('ai_ic_gemini_model') || 'gemini-2.5-flash',
+            useGrounding: localStorage.getItem('ai_ic_use_grounding') !== 'false'
+        };
+
+        // Pre-loaded Institutional Memorandum Sample
+        let icReports = [
+            {
+                id: 'ic-memo-sample-01',
+                topic: '台積電 (2330) 與 AI 供應鏈估值與法說前瞻（示範基準報告）',
+                timestamp: '2026/11/13 09:00',
+                isLiveGrounded: false,
+                rating: '逢低布局 (Accumulate)',
+                ratingType: 'bullish',
+                targetZone: 'NT$ 1,080 – 1,160（支撐 NT$ 985）',
+                riskReward: '1 : 2.8',
+                allocation: '核心配置 25%（分三批進場）',
+                executiveSummary: 'AI 算力基建需求仍處於結構性擴張期，台積電在 2nm 製程良率與 CoWoS 先進封裝產能具備絕對定價權。然而短線股價已反映部分樂觀預期，CRO 提醒需防範美國關稅政策與 CSP 資本支出增速放緩引發的估值震盪，建議採取「回測月線分批承接」策略。',
+                metrics: [
+                    { label: '預估 Forward PE', value: '21.4x', note: '處於 5 年均值 +0.8 SD', up: true },
+                    { label: '目標毛利率區間', value: '56.5% – 58.0%', note: '受惠 3nm/5nm 滿載', up: true },
+                    { label: '風險報酬比 (R/R)', value: '1 : 2.8', note: '符合投審會進場門檻', up: true },
+                    { label: '建議硬性停損點', value: 'NT$ 945', note: '跌破季線且外資連賣', up: false }
+                ],
+                sophiaView: '【基本面與估值拆解】受惠於四大雲端巨頭（CSP）自研 ASIC 與 GPU 訂單同步放量，先進製程產能利用率維持 95% 以上高檔。晶圓代工價格調漲效應將於下季完整體現，預估全年 EPS 年增率可望維持 28% 以上高成長，相較美股同業仍具估值折價優勢。',
+                marcusView: '【總經與資金流向】美國 10 年期公債殖利率維持在 4.25% 附近震盪，只要核心 PCE 通膨未出現二次反彈，聯準會漸進式降息軌道不變，有利外資機構資金持續回補亞洲高現金流科技權值股；惟需留意美元指數若突破 105.5 將對新台幣造成短線貶值壓力。',
+                elenaView: '【CRO 反方壓力測試】我反對在歷史高點附近一次性追高！目前市場共識過度擁擠（Crowded Trade），若美國商務部擴大對高階 AI 晶片出口限制，或下游伺服器組裝廠出現零組件長短料遞延，本益比可能面臨 15% 的均值回歸壓縮（PE Compression）。建議配置 5% 反向 ETF 或黃金部位對沖。',
+                victorDecision: '【CIO 最終決策指令】採納 Sophia 的基本面長多邏輯，同時納入 Elena 的估值回撤警戒。決議給予「逢低布局」評級：第一批（10% 資金）於現價區間建立底倉；第二批（10%）待股價回測 20 日均線不破時加碼；第三批（5%）保留應對系統性回檔。若帶量跌破 NT$ 945 則嚴格執行停損減碼。',
+                sources: []
+            }
+        ];
+
+        let activeReport = icReports[0];
+        let isCommitteeRunning = false;
+
+        /**
+         * ============================================================================
+         * 2. GEMINI API INTEGRATION (Real API + Google Search Grounding + Fallback)
+         * ============================================================================
+         */
+        async function executeGeminiICAnalysis(topic) {
+            const systemInstruction = `你是一個由四位華爾街與外資投行級分析師組成的「機構級投資審議委員會（IC）」，必須使用繁體中文輸出嚴謹、量化、可執行的投資研究報告，嚴禁空泛廢話。
+四位成員分工如下：
+1. SOPHIA（台美科技產業分析師）：專攻財報毛利率、營收動能、產業鏈位置與 Forward PE 估值倍數拆解。
+2. MARCUS（全球總經與利率策略師）：專攻 Fed 利率路徑、美債殖利率、通膨與跨國資金匯率流向對估值的實質影響。
+3. ELENA（地緣政治與風控長 CRO）：擔任「反方辯手（魔鬼代言人）」，專門挑出多方盲點、關稅禁令、供應鏈斷鏈與極端黑天鵝風險。
+4. VICTOR（首席投資長 CIO）：統籌多空論點，拍板最終評級、目標價/關鍵點位、風險報酬比（R/R）、資金配置水位與硬性停損條件。
+
+請嚴格按照以下 JSON Schema 結構回傳純 JSON（不要包含 markdown code block 標記）：
+{
+  "rating": "強力買進 (Strong Buy) | 逢低布局 (Accumulate) | 中立觀望 (Neutral) | 減碼避險 (Underweight)",
+  "ratingType": "bullish | neutral | bearish",
+  "targetZone": "具體目標價區間與關鍵支撐壓力位",
+  "riskReward": "例如 1 : 2.6",
+  "allocation": "具體建議資金配置比例與分批節奏",
+  "executiveSummary": "120字以內的投審會核心決議摘要",
+  "metrics": [
+    { "label": "指標名稱1", "value": "量化數值", "note": "簡短解讀", "up": true },
+    { "label": "指標名稱2", "value": "量化數值", "note": "簡短解讀", "up": true },
+    { "label": "指標名稱3", "value": "量化數值", "note": "簡短解讀", "up": false },
+    { "label": "指標名稱4", "value": "量化數值", "note": "簡短解讀", "up": false }
+  ],
+  "sophiaView": "【基本面與估值拆解】詳細產業與財報數據分析...",
+  "marcusView": "【總經與資金流向】利率、通膨與資金面量化影響...",
+  "elenaView": "【CRO 反方壓力測試】尖銳反駁、極端情境與對沖劇本...",
+  "victorDecision": "【CIO 最終決策指令】具體操作策略、進場條件與停損紀律..."
+}`;
+
+            const userPrompt = `請針對以下研究標的或議題召開投審會，結合最新市場動態與數據產出機構級投資備忘錄：\n「${topic}」`;
+
+            // Determine API key & model (supports user localStorage key OR runtime empty key)
+            const keyToUse = apiConfig.apiKey.trim();
+            const modelName = apiConfig.model || 'gemini-2.5-flash';
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: {
+                    temperature: 0.4,
+                    responseMimeType: "application/json"
+                }
+            };
+
+            if (apiConfig.useGrounding) {
+                payload.tools = [{ "google_search": {} }];
+            }
+
+            // Exponential backoff fetch
+            let lastErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errText}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+                    const rawText = candidate?.content?.parts?.[0]?.text;
+                    if (!rawText) throw new Error('Empty response from Gemini');
+
+                    // Parse JSON safely (strip potential markdown fences if grounding bypassed responseMimeType)
+                    const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+                    const parsed = JSON.parse(cleanedJson);
+
+                    // Extract Google Search Grounding sources if available
+                    let sources = [];
+                    const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+                    chunks.forEach(chunk => {
+                        if (chunk.web?.uri && chunk.web?.title) {
+                            sources.push({ title: chunk.web.title, uri: chunk.web.uri });
+                        }
+                    });
+                    // Deduplicate sources by URI
+                    sources = Array.from(new Map(sources.map(s => [s.uri, s])).values()).slice(0, 6);
+
+                    return {
+                        ...parsed,
+                        isLiveGrounded: apiConfig.useGrounding,
+                        sources
+                    };
+                } catch (err) {
+                    lastErr = err;
+                    if (attempt < 2) {
+                        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+                    }
+                }
+            }
+
+            // If API call fails (e.g. no key provided in standalone local file), use High-Fidelity Institutional Synthesis Fallback
+            console.warn('Gemini API fallback triggered:', lastErr?.message);
+            return buildHighFidelityFallbackReport(topic);
+        }
+
+        function buildHighFidelityFallbackReport(topic) {
+            const isMacro = /Fed|利率|通膨|美債|匯率|CPI|總經|央行/i.test(topic);
+            const isGeo = /關稅|台海|地緣|戰爭|禁令|原油|制裁|對沖/i.test(topic);
+
+            return {
+                isLiveGrounded: false,
+                rating: isGeo ? '減碼避險 (Underweight)' : (isMacro ? '中立觀望 (Neutral)' : '逢低布局 (Accumulate)'),
+                ratingType: isGeo ? 'bearish' : (isMacro ? 'neutral' : 'bullish'),
+                targetZone: isGeo ? '防禦水位 30%（黃金 / 短債對沖）' : (isMacro ? 'US10Y 4.10% – 4.45% 區間震盪' : '估值中樞 +12% 上行空間 / -6% 下檔支撐'),
+                riskReward: isGeo ? '1 : 1.4（風險偏高）' : '1 : 2.5',
+                allocation: isGeo ? '降低高 Beta 曝險至 45% 以下' : '建議配置 15% – 20%（分三批布局）',
+                executiveSummary: `針對「${topic}」，投審會完成跨部門多空辯論。基本面與產業趨勢具備結構性支撐，但總經利率預期與地緣貿易雜音使短線波動率上升。CIO 拍板採取「核心部位紀律分批、搭配尾部風險對沖」策略，嚴守停損點位。（提示：點擊右上角「⚙️ API 設定」填入 Gemini API Key 可啟用即時聯網搜尋抓取最新股價與新聞）`,
+                metrics: [
+                    { label: '機構多空評分', value: isGeo ? '4.8 / 10' : '7.4 / 10', note: isGeo ? '尾部風險升溫' : '基本面偏多', up: !isGeo },
+                    { label: '隱含波動率評估', value: '中高波動', note: '事件驅動敏感期', up: false },
+                    { label: '風險報酬比 (R/R)', value: isGeo ? '1 : 1.4' : '1 : 2.5', note: '嚴控單筆回撤', up: !isGeo },
+                    { label: '硬性停損基準', value: '-6.5%', note: '觸及無條件減碼', up: false }
+                ],
+                sophiaView: `【基本面與估值拆解】針對「${topic}」所涉之核心產業鏈，目前龍頭企業在技術護城河與現金流創造能力上仍具優勢。觀察供應鏈庫存週轉天數已回到健康水位，但市場對未來兩季營收年增率（YoY）的預期門檻已拉高，財報公布前後若無大幅優於預期（Beat & Raise），估值倍數恐面臨短線修正。`,
+                marcusView: `【總經與資金流向】當前全球主要央行處於政策觀察期，美國實質利率維持正值限制了高估值資產的無上限擴張。跨國機構資金近期呈現「從高估值純題材股、轉向具備實質自由現金流與股息保護標的」的輪動特徵，匯率避險成本亦需納入海外部位考量。`,
+                elenaView: `【CRO 反方壓力測試】針對「${topic}」，我必須指出市場低估了政策與地緣突發變數的傳導速度！一旦關稅壁壘或出口管制清單擴大，企業毛利率將首當其衝遭到壓縮 150–250 bps。建議投資組合必須配置 5%–10% 抗通膨資產、短天期美債或反向避險工具，避免單一事件造成淨值大幅回撤。`,
+                victorDecision: `【CIO 最終決策指令】綜合三方研判，針對「${topic}」嚴禁追高。第一批（40% 目標倉位）於關鍵技術支撐區分批承接；第二批（40%）待關鍵財報或總經數據落地確認後加碼；保留 20% 現金應對極端波動。若跌破關鍵支撐位 -6.5% 則無條件執行風控停損。`,
+                sources: []
+            };
+        }
+
+        /**
+         * ============================================================================
+         * 3. THREE.JS ISOMETRIC 3D VOXEL OFFICE SCENE
+         * ============================================================================
+         */
+        let scene, camera, renderer, officeGroup;
+        const agentEntities = {};
+        let isDofActive = false;
+
+        const camState = {
+            azimuth: Math.PI / 4,
+            polar: Math.PI / 3.1,
+            distance: 19.5,
+            target: new THREE.Vector3(0.4, 1.0, 0.2),
+            isDragging: false,
+            prevX: 0,
+            prevY: 0
+        };
+
+        function createVoxel(w, h, d, color, x = 0, y = 0, z = 0, castShadow = true, receiveShadow = true) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.72,
+                metalness: 0.1
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = castShadow;
+            mesh.receiveShadow = receiveShadow;
+            return mesh;
+        }
+
+        function createMonitorTexture(mode = 'kline') {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 80;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#070B12';
+            ctx.fillRect(0, 0, 128, 80);
+
+            ctx.strokeStyle = '#1E293B';
+            ctx.lineWidth = 1;
+            for (let y = 16; y < 80; y += 16) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(128, y); ctx.stroke();
+            }
+
+            if (mode === 'kline') {
+                const candles = [
+                    { x: 10, o: 56, c: 46, h: 42, l: 60, up: true },
+                    { x: 22, o: 46, c: 50, h: 44, l: 54, up: false },
+                    { x: 34, o: 50, c: 38, h: 34, l: 52, up: true },
+                    { x: 46, o: 38, c: 32, h: 28, l: 42, up: true },
+                    { x: 58, o: 32, c: 37, h: 30, l: 40, up: false },
+                    { x: 70, o: 37, c: 24, h: 20, l: 38, up: true },
+                    { x: 82, o: 24, c: 28, h: 22, l: 32, up: false },
+                    { x: 94, o: 28, c: 15, h: 11, l: 30, up: true },
+                    { x: 106, o: 15, c: 11, h: 8, l: 19, up: true }
+                ];
+                candles.forEach(c => {
+                    ctx.strokeStyle = c.up ? '#EF4444' : '#10B981';
+                    ctx.fillStyle = c.up ? '#EF4444' : '#10B981';
+                    ctx.beginPath();
+                    ctx.moveTo(c.x + 3, c.h);
+                    ctx.lineTo(c.x + 3, c.l);
+                    ctx.stroke();
+                    ctx.fillRect(c.x, Math.min(c.o, c.c), 6, Math.max(3, Math.abs(c.o - c.c)));
+                });
+            } else {
+                const bars = ['#3B82F6', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6'];
+                bars.forEach((col, i) => {
+                    ctx.fillStyle = col;
+                    ctx.fillRect(10, 12 + i * 13, 40 + ((i * 23) % 65), 6);
+                });
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        function createWallBoardTexture(text, subText, accentColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 80;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0B0F17';
+            ctx.fillRect(0, 0, 320, 80);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(2, 2, 316, 76);
+
+            ctx.fillStyle = accentColor;
+            ctx.font = 'bold 24px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, 160, 36);
+
+            ctx.fillStyle = '#94A3B8';
+            ctx.font = '14px "JetBrains Mono", monospace';
+            ctx.fillText(subText, 160, 60);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function initThreeScene() {
+            const container = document.getElementById('three-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#0B0F17');
+
+            camera = new THREE.PerspectiveCamera(34, container.clientWidth / container.clientHeight, 0.1, 100);
+            updateCameraPosition();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambient = new THREE.AmbientLight(0xCBD5E1, 0.65);
+            scene.add(ambient);
+
+            const dirLight = new THREE.DirectionalLight(0xFFFBEB, 0.95);
+            dirLight.position.set(11, 18, 12);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            const d = 11;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            dirLight.shadow.bias = -0.0005;
+            scene.add(dirLight);
+
+            const blueFill = new THREE.DirectionalLight(0x3B82F6, 0.35);
+            blueFill.position.set(-10, 8, -10);
+            scene.add(blueFill);
+
+            officeGroup = new THREE.Group();
+            scene.add(officeGroup);
+
+            buildInstitutionalOffice();
+            buildInstitutionalAgents();
+            setupCameraControls();
+
+            window.addEventListener('resize', () => {
+                if (!container) return;
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            animate();
+        }
+
+        function buildInstitutionalOffice() {
+            const roomW = 14.5;
+            const roomD = 9.2;
+
+            // Plinth Base
+            officeGroup.add(createVoxel(roomW + 0.6, 0.42, roomD + 0.6, 0x1E293B, 0, -0.26, 0, false, true));
+
+            // Dual-Zone Checkerboard Floor (Left: Trading/Research Wood-Slate, Right: IC Lounge Blue Carpet)
+            const tileGeo = new THREE.BoxGeometry(1, 0.12, 1);
+            for (let x = -6.75; x <= 6.75; x += 1) {
+                for (let z = -4.1; z <= 4.1; z += 1) {
+                    const isChecker = (Math.floor(x + 7) + Math.floor(z + 5)) % 2 === 0;
+                    const isLounge = (x > 0.6 && z > 0.2);
+                    let color;
+                    if (isLounge) {
+                        color = isChecker ? 0x1E3A5F : 0x264975; // Deep Institutional Lounge Blue
+                    } else {
+                        color = isChecker ? 0x475569 : 0x334155; // Sleek Modern Trading Floor Slate
+                    }
+                    const tile = new THREE.Mesh(tileGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.82 }));
+                    tile.position.set(x, 0, z);
+                    tile.receiveShadow = true;
+                    officeGroup.add(tile);
+                }
+            }
+
+            // Cutaway Walls
+            const wallCol = 0x1E293B;
+            const trimCol = 0x0F172A;
+            officeGroup.add(createVoxel(roomW + 0.4, 2.9, 0.25, wallCol, 0, 1.4, -4.72));
+            officeGroup.add(createVoxel(roomW + 0.4, 0.18, 0.3, trimCol, 0, 2.85, -4.72));
+            officeGroup.add(createVoxel(0.25, 2.9, roomD + 0.25, wallCol, -7.35, 1.4, -0.05));
+            officeGroup.add(createVoxel(0.3, 0.18, roomD + 0.25, trimCol, -7.35, 2.85, -0.05));
+
+            // Partition Wall between Trading Desk & IC Lounge
+            officeGroup.add(createVoxel(0.22, 1.15, 3.9, 0x334155, 0.45, 0.58, 2.6));
+            officeGroup.add(createVoxel(0.26, 0.12, 3.94, 0xF59E0B, 0.45, 1.18, 2.6)); // Gold trim accent
+
+            // Wall Ticker & Zone Boards
+            const board1 = new THREE.Mesh(
+                new THREE.BoxGeometry(3.1, 0.78, 0.08),
+                new THREE.MeshBasicMaterial({ map: createWallBoardTexture('ALPHA RESEARCH DESK', 'TAIEX • NASDAQ • SOX', '#F59E0B') })
+            );
+            board1.position.set(-2.3, 2.15, -4.56);
+            officeGroup.add(board1);
+
+            const board2 = new THREE.Mesh(
+                new THREE.BoxGeometry(3.1, 0.78, 0.08),
+                new THREE.MeshBasicMaterial({ map: createWallBoardTexture('INVESTMENT COMMITTEE', 'MACRO • RISK • CIO', '#10B981') })
+            );
+            board2.position.set(3.1, 2.15, -4.56);
+            officeGroup.add(board2);
+
+            // Server Rack (Quant Compute Node) on far left
+            const serverRack = new THREE.Group();
+            serverRack.position.set(-6.4, 0, -3.8);
+            serverRack.add(createVoxel(1.1, 2.3, 0.9, 0x0F172A, 0, 1.15, 0));
+            for (let y = 0.4; y <= 2.0; y += 0.32) {
+                serverRack.add(createVoxel(0.92, 0.18, 0.06, 0x1E293B, 0, y, 0.45));
+                serverRack.add(createVoxel(0.12, 0.06, 0.07, 0x10B981, -0.32, y, 0.46));
+                serverRack.add(createVoxel(0.12, 0.06, 0.07, 0x3B82F6, -0.15, y, 0.46));
+            }
+            officeGroup.add(serverRack);
+
+            // Bookshelf & Plants
+            buildBookshelf(0.2, -4.25);
+            buildBookshelf(5.9, -4.25);
+            buildVoxelPlant(-6.4, 3.6);
+            buildVoxelPlant(-0.1, 1.2);
+            buildVoxelPlant(-0.1, 3.7);
+            buildVoxelPlant(6.5, 3.8);
+
+            // 4 Dual-Monitor Analyst Workstations
+            const tex1 = createMonitorTexture('kline');
+            const tex2 = createMonitorTexture('bars');
+            IC_TEAM.forEach(member => {
+                buildWorkstation(member.deskPos.x, member.deskPos.z - 0.9, tex1, tex2, member.accentColor);
+            });
+
+            // IC Lounge Sofa & Coffee Table
+            buildLoungeFurniture();
+        }
+
+        function buildBookshelf(x, z) {
+            const g = new THREE.Group();
+            g.position.set(x, 0, z);
+            const frame = 0x1E293B;
+            g.add(createVoxel(1.5, 2.2, 0.1, frame, 0, 1.1, -0.22));
+            g.add(createVoxel(0.12, 2.2, 0.5, frame, -0.7, 1.1, 0));
+            g.add(createVoxel(0.12, 2.2, 0.5, frame, 0.7, 1.1, 0));
+            [0.15, 0.8, 1.45, 2.1].forEach(y => g.add(createVoxel(1.4, 0.1, 0.48, frame, 0, y, 0)));
+
+            const colors = [0x3B82F6, 0xF59E0B, 0x10B981, 0xEF4444, 0x6366F1];
+            [0.2, 0.85, 1.5].forEach((sy, r) => {
+                for (let i = 0; i < 6; i++) {
+                    const bh = 0.42 + ((i + r) % 3) * 0.05;
+                    g.add(createVoxel(0.16, bh, 0.36, colors[(i + r) % colors.length], -0.5 + i * 0.2, sy + bh / 2 + 0.05, 0.02));
+                }
+            });
+            officeGroup.add(g);
+        }
+
+        function buildVoxelPlant(x, z) {
+            const p = new THREE.Group();
+            p.position.set(x, 0, z);
+            p.add(createVoxel(0.62, 0.48, 0.62, 0x334155, 0, 0.24, 0));
+            p.add(createVoxel(0.72, 0.12, 0.72, 0x475569, 0, 0.5, 0));
+            p.add(createVoxel(0.7, 0.55, 0.7, 0x059669, 0, 0.82, 0));
+            p.add(createVoxel(0.5, 0.45, 0.5, 0x10B981, 0.06, 1.22, -0.04));
+            officeGroup.add(p);
+        }
+
+        function buildWorkstation(x, z, tex1, tex2, accentHex) {
+            const ws = new THREE.Group();
+            ws.position.set(x, 0, z);
+
+            ws.add(createVoxel(2.0, 0.12, 1.05, 0x1E293B, 0, 0.82, 0));
+            ws.add(createVoxel(0.12, 0.8, 0.12, 0x0F172A, -0.88, 0.4, -0.42));
+            ws.add(createVoxel(0.12, 0.8, 0.12, 0x0F172A, 0.88, 0.4, -0.42));
+            ws.add(createVoxel(0.12, 0.8, 0.12, 0x0F172A, -0.88, 0.4, 0.42));
+            ws.add(createVoxel(0.12, 0.8, 0.12, 0x0F172A, 0.88, 0.4, 0.42));
+
+            // Dual Monitors
+            ws.add(createVoxel(0.14, 0.25, 0.14, 0x0F172A, -0.4, 0.98, -0.2));
+            ws.add(createVoxel(0.14, 0.25, 0.14, 0x0F172A, 0.4, 0.98, -0.2));
+
+            const m1 = new THREE.Group();
+            m1.position.set(-0.44, 1.32, -0.2);
+            m1.rotation.y = 0.18;
+            m1.add(createVoxel(0.84, 0.54, 0.08, 0x090D16, 0, 0, 0));
+            const s1 = new THREE.Mesh(new THREE.PlaneGeometry(0.76, 0.46), new THREE.MeshBasicMaterial({ map: tex1 }));
+            s1.position.set(0, 0, 0.045);
+            m1.add(s1);
+            ws.add(m1);
+
+            const m2 = new THREE.Group();
+            m2.position.set(0.44, 1.32, -0.2);
+            m2.rotation.y = -0.18;
+            m2.add(createVoxel(0.84, 0.54, 0.08, 0x090D16, 0, 0, 0));
+            const s2 = new THREE.Mesh(new THREE.PlaneGeometry(0.76, 0.46), new THREE.MeshBasicMaterial({ map: tex2 }));
+            s2.position.set(0, 0, 0.045);
+            m2.add(s2);
+            ws.add(m2);
+
+            // Keyboard & Accent Cup
+            ws.add(createVoxel(0.68, 0.05, 0.22, 0xCBD5E1, -0.06, 0.9, 0.22));
+            ws.add(createVoxel(0.14, 0.16, 0.14, accentHex, -0.75, 0.95, 0.22));
+
+            // Ergonomic Chair
+            const chair = new THREE.Group();
+            chair.position.set(0, 0, 0.85);
+            chair.add(createVoxel(0.68, 0.12, 0.68, 0x0F172A, 0, 0.48, 0));
+            chair.add(createVoxel(0.14, 0.45, 0.14, 0x090D16, 0, 0.24, 0));
+            chair.add(createVoxel(0.55, 0.08, 0.12, 0x090D16, 0, 0.05, 0));
+            chair.add(createVoxel(0.12, 0.08, 0.55, 0x090D16, 0, 0.05, 0));
+            ws.add(chair);
+
+            officeGroup.add(ws);
+        }
+
+        function buildLoungeFurniture() {
+            const lounge = new THREE.Group();
+            lounge.position.set(3.9, 0, 2.4);
+
+            // Executive Leather Sofa
+            lounge.add(createVoxel(4.5, 0.42, 0.98, 0x1E293B, 0, 0.25, -0.6));
+            lounge.add(createVoxel(4.5, 0.68, 0.25, 0x0F172A, 0, 0.72, -0.95));
+            lounge.add(createVoxel(0.28, 0.56, 0.98, 0x0F172A, -2.2, 0.52, -0.6));
+            lounge.add(createVoxel(0.28, 0.56, 0.98, 0x0F172A, 2.2, 0.52, -0.6));
+
+            // Glass/Dark Wood Coffee Table
+            lounge.add(createVoxel(2.2, 0.1, 0.88, 0x334155, 0, 0.52, 0.78));
+            lounge.add(createVoxel(0.12, 0.48, 0.12, 0x0F172A, -0.95, 0.25, 0.45));
+            lounge.add(createVoxel(0.12, 0.48, 0.12, 0x0F172A, 0.95, 0.25, 0.45));
+            lounge.add(createVoxel(0.12, 0.48, 0.12, 0x0F172A, -0.95, 0.25, 1.1));
+            lounge.add(createVoxel(0.12, 0.48, 0.12, 0x0F172A, 0.95, 0.25, 1.1));
+
+            // Espresso Cups
+            lounge.add(createVoxel(0.16, 0.16, 0.16, 0xF8FAFC, -0.45, 0.65, 0.75));
+            lounge.add(createVoxel(0.16, 0.16, 0.16, 0xF59E0B, 0.35, 0.65, 0.8));
+
+            officeGroup.add(lounge);
+        }
+
+        /**
+         * Build the 4 Institutional Voxel Analysts (Victor, Sophia, Marcus, Elena)
+         */
+        function buildInstitutionalAgents() {
+            const overlay = document.getElementById('voxel-overlay');
+
+            IC_TEAM.forEach((member, idx) => {
+                const charGroup = new THREE.Group();
+
+                // Trousers
+                const legL = createVoxel(0.24, 0.48, 0.26, 0x0F172A, -0.15, 0.24, 0);
+                const legR = createVoxel(0.24, 0.48, 0.26, 0x0F172A, 0.15, 0.24, 0);
+                charGroup.add(legL, legR);
+
+                // Torso
+                const outfitCol = new THREE.Color(member.outfitColor);
+                charGroup.add(createVoxel(0.62, 0.66, 0.36, outfitCol, 0, 0.8, 0));
+
+                // Unique Outfit Details
+                if (member.id === 'victor') {
+                    // Gold Tie + White Shirt Collar
+                    charGroup.add(createVoxel(0.22, 0.18, 0.03, 0xF8FAFC, 0, 1.04, 0.185));
+                    charGroup.add(createVoxel(0.1, 0.44, 0.04, 0xF59E0B, 0, 0.84, 0.19));
+                } else if (member.id === 'elena') {
+                    // Trench Coat Lapels & Belt
+                    charGroup.add(createVoxel(0.66, 0.1, 0.4, 0x022C22, 0, 0.65, 0));
+                }
+
+                // Arms
+                const armL = new THREE.Group();
+                armL.position.set(-0.42, 1.05, 0);
+                armL.add(createVoxel(0.2, 0.52, 0.22, outfitCol, 0, -0.2, 0));
+                armL.add(createVoxel(0.18, 0.16, 0.2, 0xFCD5B5, 0, -0.48, 0));
+
+                const armR = new THREE.Group();
+                armR.position.set(0.42, 1.05, 0);
+                armR.add(createVoxel(0.2, 0.52, 0.22, outfitCol, 0, -0.2, 0));
+                armR.add(createVoxel(0.18, 0.16, 0.2, 0xFCD5B5, 0, -0.48, 0));
+                charGroup.add(armL, armR);
+
+                // Head
+                const head = new THREE.Group();
+                head.position.set(0, 1.52, 0);
+                head.add(createVoxel(0.76, 0.72, 0.72, 0xFCD5B5, 0, 0, 0));
+
+                // Hair & Glasses Customization
+                if (member.id === 'victor') {
+                    // Executive slicked silver-black hair
+                    head.add(createVoxel(0.8, 0.22, 0.78, 0x1E293B, 0, 0.36, -0.02));
+                    head.add(createVoxel(0.8, 0.55, 0.2, 0x1E293B, 0, 0.12, -0.32));
+                } else if (member.id === 'sophia') {
+                    // Long dark hair + sleek glasses
+                    head.add(createVoxel(0.82, 0.22, 0.8, 0x271713, 0, 0.36, -0.02));
+                    head.add(createVoxel(0.84, 0.78, 0.24, 0x271713, 0, 0.02, -0.32));
+                    head.add(createVoxel(0.26, 0.18, 0.05, 0x0F172A, -0.18, 0.02, 0.37));
+                    head.add(createVoxel(0.26, 0.18, 0.05, 0x0F172A, 0.18, 0.02, 0.37));
+                } else if (member.id === 'marcus') {
+                    // Neat brown hair + silver-rimmed glasses
+                    head.add(createVoxel(0.8, 0.22, 0.78, 0x451A03, 0, 0.36, -0.02));
+                    head.add(createVoxel(0.8, 0.52, 0.2, 0x451A03, 0, 0.12, -0.32));
+                    head.add(createVoxel(0.26, 0.2, 0.05, 0x94A3B8, -0.18, 0.02, 0.37));
+                    head.add(createVoxel(0.26, 0.2, 0.05, 0x94A3B8, 0.18, 0.02, 0.37));
+                } else if (member.id === 'elena') {
+                    // Sharp bob-cut dark hair
+                    head.add(createVoxel(0.82, 0.24, 0.8, 0x0F172A, 0, 0.36, -0.01));
+                    head.add(createVoxel(0.82, 0.62, 0.24, 0x0F172A, 0, 0.06, -0.31));
+                }
+
+                // Eyes
+                head.add(createVoxel(0.09, 0.11, 0.05, 0x0F172A, -0.18, 0.02, 0.375));
+                head.add(createVoxel(0.09, 0.11, 0.05, 0x0F172A, 0.18, 0.02, 0.375));
+
+                charGroup.add(head);
+
+                charGroup.position.set(member.loungePos.x, 0.15, member.loungePos.z);
+                charGroup.rotation.y = member.loungeRot;
+                officeGroup.add(charGroup);
+
+                // Floating HTML Speech Bubble & Name Tag
+                const anchor = document.createElement('div');
+                anchor.className = 'agent-ui-anchor';
+                anchor.innerHTML = `
+                    <div id="bubble-${member.id}" class="speech-bubble">${member.idleQuotes[0]}</div>
+                    <div class="agent-tag">
+                        <span id="dot-${member.id}" class="status-dot status-idle"></span>
+                        <span>${member.name}</span>
+                    </div>
+                `;
+                anchor.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openAnalystProfileModal(member.id);
+                });
+                overlay.appendChild(anchor);
+
+                agentEntities[member.id] = {
+                    config: member,
+                    mesh: charGroup,
+                    head,
+                    armL,
+                    armR,
+                    legL,
+                    legR,
+                    anchorEl: anchor,
+                    bubbleEl: document.getElementById(`bubble-${member.id}`),
+                    dotEl: document.getElementById(`dot-${member.id}`),
+                    mode: 'idle', // 'idle' | 'to_desk' | 'working' | 'debating' | 'returning'
+                    targetPos: new THREE.Vector3(member.loungePos.x, 0.15, member.loungePos.z),
+                    quoteTimer: idx * 2.2
+                };
+            });
+        }
+
+        function updateCameraPosition() {
+            const x = camState.target.x + camState.distance * Math.sin(camState.polar) * Math.sin(camState.azimuth);
+            const y = camState.target.y + camState.distance * Math.cos(camState.polar);
+            const z = camState.target.z + camState.distance * Math.sin(camState.polar) * Math.cos(camState.azimuth);
+            camera.position.set(x, y, z);
+            camera.lookAt(camState.target);
+        }
+
+        function setupCameraControls() {
+            const viewport = document.getElementById('office-viewport');
+
+            viewport.addEventListener('mousedown', (e) => {
+                camState.isDragging = true;
+                camState.prevX = e.clientX;
+                camState.prevY = e.clientY;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!camState.isDragging) return;
+                const dx = e.clientX - camState.prevX;
+                const dy = e.clientY - camState.prevY;
+                camState.prevX = e.clientX;
+                camState.prevY = e.clientY;
+
+                camState.azimuth -= dx * 0.006;
+                camState.polar = Math.max(0.35, Math.min(Math.PI / 2.2, camState.polar - dy * 0.006));
+                updateCameraPosition();
+            });
+
+            window.addEventListener('mouseup', () => {
+                camState.isDragging = false;
+            });
+
+            viewport.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    camState.isDragging = true;
+                    camState.prevX = e.touches[0].clientX;
+                    camState.prevY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+
+            viewport.addEventListener('touchmove', (e) => {
+                if (!camState.isDragging || e.touches.length !== 1) return;
+                const dx = e.touches[0].clientX - camState.prevX;
+                const dy = e.touches[0].clientY - camState.prevY;
+                camState.prevX = e.touches[0].clientX;
+                camState.prevY = e.touches[0].clientY;
+
+                camState.azimuth -= dx * 0.007;
+                camState.polar = Math.max(0.35, Math.min(Math.PI / 2.2, camState.polar - dy * 0.007));
+                updateCameraPosition();
+            }, { passive: true });
+
+            viewport.addEventListener('touchend', () => {
+                camState.isDragging = false;
+            });
+
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camState.distance = Math.max(11, Math.min(28, camState.distance + e.deltaY * 0.01));
+                updateCameraPosition();
+            }, { passive: false });
+        }
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const elapsed = clock.getElapsedTime();
+
+            Object.values(agentEntities).forEach((agent, idx) => {
+                const mesh = agent.mesh;
+
+                if (agent.mode === 'to_desk' || agent.mode === 'returning') {
+                    const dir = new THREE.Vector3().subVectors(agent.targetPos, mesh.position);
+                    dir.y = 0;
+                    const dist = dir.length();
+
+                    if (dist > 0.08) {
+                        dir.normalize();
+                        mesh.position.addScaledVector(dir, 3.8 * delta);
+                        mesh.rotation.y = Math.atan2(dir.x, dir.z);
+
+                        // Brisk running animation
+                        mesh.position.y = Math.abs(Math.sin(elapsed * 16 + idx)) * 0.14;
+                        agent.legL.rotation.x = Math.sin(elapsed * 16 + idx) * 0.65;
+                        agent.legR.rotation.x = -Math.sin(elapsed * 16 + idx) * 0.65;
+                        agent.armL.rotation.x = -Math.sin(elapsed * 16 + idx) * 0.55;
+                        agent.armR.rotation.x = Math.sin(elapsed * 16 + idx) * 0.55;
+                    } else {
+                        mesh.position.copy(agent.targetPos);
+                        agent.legL.rotation.x = 0;
+                        agent.legR.rotation.x = 0;
+
+                        if (agent.mode === 'to_desk') {
+                            agent.mode = 'working';
+                            mesh.rotation.y = Math.PI;
+                            mesh.position.y = 0.08;
+                        } else {
+                            agent.mode = 'idle';
+                            mesh.rotation.y = agent.config.loungeRot;
+                            mesh.position.y = 0.15;
+                            agent.armL.rotation.x = -0.25;
+                            agent.armR.rotation.x = -0.25;
+                            setAgentDot(agent.config.id, 'done');
+                            setTimeout(() => {
+                                if (agent.mode === 'idle') setAgentDot(agent.config.id, 'idle');
+                            }, 5000);
+                        }
+                    }
+                } else if (agent.mode === 'working') {
+                    // Rapid terminal typing
+                    agent.armL.rotation.x = -0.88 + Math.sin(elapsed * 28 + idx) * 0.25;
+                    agent.armR.rotation.x = -0.88 - Math.sin(elapsed * 28 + idx) * 0.25;
+                    agent.head.rotation.y = Math.sin(elapsed * 4 + idx) * 0.2;
+                } else if (agent.mode === 'debating') {
+                    // Turn toward each other and gesture animatedly during IC Debate!
+                    if (agent.config.id === 'elena') {
+                        mesh.rotation.y = -Math.PI / 2.2; // Face Sophia & Marcus
+                    } else if (agent.config.id === 'victor') {
+                        mesh.rotation.y = Math.PI * 0.85;
+                    } else {
+                        mesh.rotation.y = Math.PI / 2.2; // Face Elena
+                    }
+                    agent.armR.rotation.x = -0.7 + Math.sin(elapsed * 12 + idx) * 0.45;
+                    agent.head.rotation.y = Math.sin(elapsed * 6 + idx) * 0.25;
+                } else {
+                    // Idle in lounge
+                    agent.head.rotation.y = Math.sin(elapsed * 1.3 + idx * 1.5) * 0.2;
+                    agent.armL.rotation.x = -0.25;
+                    agent.armR.rotation.x = -0.25;
+
+                    agent.quoteTimer += delta;
+                    if (agent.quoteTimer > 8.0) {
+                        agent.quoteTimer = 0;
+                        const qList = agent.config.idleQuotes;
+                        setAgentBubble(agent.config.id, qList[Math.floor(Math.random() * qList.length)], false);
+                    }
+                }
+            });
+
+            renderer.render(scene, camera);
+            projectLabelsTo2D();
+        }
+
+        function projectLabelsTo2D() {
+            const container = document.getElementById('three-container');
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+
+            Object.values(agentEntities).forEach(agent => {
+                const pos = new THREE.Vector3();
+                agent.mesh.getWorldPosition(pos);
+                pos.y += 2.18;
+                pos.project(camera);
+
+                agent.anchorEl.style.left = `${(pos.x * 0.5 + 0.5) * w}px`;
+                agent.anchorEl.style.top = `${(-(pos.y * 0.5) + 0.5) * h}px`;
+            });
+        }
+
+        /**
+         * ============================================================================
+         * 4. FOUR-STAGE INVESTMENT COMMITTEE (IC) WORKFLOW ORCHESTRATOR
+         * ============================================================================
+         */
+        function setAgentBubble(id, text, isDebate = false) {
+            const agent = agentEntities[id];
+            if (!agent) return;
+            agent.bubbleEl.textContent = text;
+            agent.bubbleEl.classList.toggle('debate-alert', isDebate);
+        }
+
+        function setAgentDot(id, status) {
+            const agent = agentEntities[id];
+            if (!agent) return;
+            agent.dotEl.className = 'status-dot';
+            if (status === 'working') agent.dotEl.classList.add('status-working');
+            else if (status === 'debate') agent.dotEl.classList.add('status-debate');
+            else if (status === 'done') agent.dotEl.classList.add('status-done');
+            else agent.dotEl.classList.add('status-idle');
+        }
+
+        function updateHeaderStatus(phaseText, phaseColorClass, dotColorClass, tickerText) {
+            const dot = document.getElementById('ic-phase-dot');
+            const label = document.getElementById('ic-phase-label');
+            const ticker = document.getElementById('ic-live-ticker');
+
+            dot.className = `w-2.5 h-2.5 rounded-full inline-block ${dotColorClass}`;
+            label.className = phaseColorClass;
+            label.textContent = phaseText;
+            ticker.textContent = tickerText;
+        }
+
+        function updateStageBanner(visible, title = '', step = '', pct = 25, desc = '') {
+            const banner = document.getElementById('ic-stage-banner');
+            if (!visible) {
+                banner.classList.add('hidden');
+                return;
+            }
+            banner.classList.remove('hidden');
+            document.getElementById('ic-stage-title').innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>${title}`;
+            document.getElementById('ic-stage-step').textContent = step;
+            document.getElementById('ic-stage-bar').style.width = `${pct}%`;
+            document.getElementById('ic-stage-desc').textContent = desc;
+        }
+
+        async function runInvestmentCommittee(topic) {
+            const cleanTopic = topic.trim();
+            if (!cleanTopic) {
+                showToast('請輸入欲研究的台美股代號、ETF 或總經議題', '⚠️');
+                return;
+            }
+            if (isCommitteeRunning) {
+                showToast('投審會正在進行中，請稍候本輪決議完成', '⏳');
+                return;
+            }
+
+            isCommitteeRunning = true;
+            const btnStart = document.getElementById('btn-start-ic');
+            btnStart.disabled = true;
+            btnStart.classList.add('opacity-60', 'cursor-not-allowed');
+
+            // ----------------------------------------------------------------
+            // STAGE 1: Data Gathering & Initial Draft (Run to Desks + API Call)
+            // ----------------------------------------------------------------
+            updateHeaderStatus('聯網研究中', 'text-amber-400', 'bg-amber-400 animate-ping', `投審會啟動：「${cleanTopic}」— 全員前往交易桌調閱數據`);
+            updateStageBanner(true, '階段一：聯網數據搜集與初稿撰寫', 'STEP 1 / 4', 28, 'Sophia 正在檢索毛利率與估值倍數，Marcus 正在比對美債殖利率...');
+
+            IC_TEAM.forEach(m => {
+                const ag = agentEntities[m.id];
+                ag.mode = 'to_desk';
+                ag.targetPos.set(m.deskPos.x, 0, m.deskPos.z);
+                setAgentDot(m.id, 'working');
+            });
+
+            setAgentBubble('victor', `投審會召集！全員針對「${cleanTopic.slice(0, 14)}...」建立量化模型`);
+            setAgentBubble('sophia', `調閱「${cleanTopic.slice(0, 12)}...」營收、毛利率與 Forward PE 區間`);
+            setAgentBubble('marcus', `檢索 Fed 利率點陣圖、10Y 美債殖利率與外資匯率流向`);
+            setAgentBubble('elena', `掃描地緣關稅清單與供應鏈潛在斷鏈風險參數`);
+
+            // Kick off real Gemini API call in parallel with stage animations
+            const apiPromise = executeGeminiICAnalysis(cleanTopic);
+
+            await new Promise(r => setTimeout(r, 2600));
+
+            // ----------------------------------------------------------------
+            // STAGE 2: CRO Stress Test & Bull/Bear Debate
+            // ----------------------------------------------------------------
+            updateHeaderStatus('投審會辯論中', 'text-rose-400', 'bg-rose-500 animate-ping', `CRO Elena 發起反方壓力測試，質疑樂觀估值與黑天鵝風險`);
+            updateStageBanner(true, '階段二：CRO 壓力測試與多空辯論', 'STEP 2 / 4', 62, 'Elena 擔任反方辯手，針對估值過高與政策風險提出嚴厲反駁...');
+
+            Object.values(agentEntities).forEach(ag => {
+                ag.mode = 'debating';
+                setAgentDot(ag.config.id, 'debate');
+            });
+
+            setAgentBubble('elena', `⚠️ 反方質疑：市場共識過度樂觀！若關稅或財報不如預期，估值恐回撤 15%！`, true);
+            setAgentBubble('sophia', `基本面護城河仍在，但同意短線乖離偏大，建議改採分批承接！`, false);
+            setAgentBubble('marcus', `實質利率尚未大幅下行，估值倍數確實不宜給予無上限溢價。`, false);
+            setAgentBubble('victor', `雙方論點已收斂，我來計算最終風險報酬比與停損水位。`, false);
+
+            await new Promise(r => setTimeout(r, 2400));
+
+            // ----------------------------------------------------------------
+            // STAGE 3: CIO Final Decision & Memorandum Synthesis
+            // ----------------------------------------------------------------
+            updateHeaderStatus('CIO 拍板定案', 'text-emerald-400', 'bg-emerald-400 animate-pulse', `CIO Victor 正在核定最終評級、資金配置比例與硬性停損點`);
+            updateStageBanner(true, '階段三：CIO 拍板定案與備忘錄簽署', 'STEP 3 / 4', 88, 'Victor 正在彙整四方報告並產出機構級投資決策文件...');
+
+            setAgentBubble('victor', `✅ 決議定案！已核定目標區間、風險報酬比與硬性停損紀律。`);
+
+            // Wait for Gemini API response to complete
+            const analysisData = await apiPromise;
+
+            // ----------------------------------------------------------------
+            // STAGE 4: Return to Lounge & Open Institutional Report Modal
+            // ----------------------------------------------------------------
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+            const finalReport = {
+                id: `ic-memo-${Date.now()}`,
+                topic: cleanTopic,
+                timestamp: timeStr,
+                ...analysisData
+            };
+
+            icReports.unshift(finalReport);
+            renderICArchiveList();
+
+            updateStageBanner(true, '階段四：投審會決議完成', 'STEP 4 / 4', 100, '正式投資備忘錄已歸檔並開啟檢視視窗！');
+            updateHeaderStatus('閒置待命', 'text-blue-400', 'bg-[#3B82F6]', `最新決議完成：「${cleanTopic}」— 評級：${finalReport.rating}`);
+
+            IC_TEAM.forEach(m => {
+                const ag = agentEntities[m.id];
+                ag.mode = 'returning';
+                ag.targetPos.set(m.loungePos.x, 0.15, m.loungePos.z);
+                setAgentBubble(m.id, m.id === 'victor' ? '📋 投審會決議備忘錄已送達老闆桌面！' : '本輪分析完成，已提交 CIO 彙整。', false);
+            });
+
+            setTimeout(() => updateStageBanner(false), 1800);
+
+            isCommitteeRunning = false;
+            btnStart.disabled = false;
+            btnStart.classList.remove('opacity-60', 'cursor-not-allowed');
+
+            openICReportModal(finalReport);
+        }
+
+        /**
+         * ============================================================================
+         * 5. UI RENDERING (Roster, Report Modal, Profile Modal, API Settings)
+         * ============================================================================
+         */
+        function renderICRoster() {
+            const container = document.getElementById('ic-roster-container');
+            if (!container) return;
+
+            container.innerHTML = IC_TEAM.map(m => `
+                <div onclick="openAnalystProfileModal('${m.id}')" class="bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-[#334155] rounded-xl p-2.5 cursor-pointer transition group">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white border border-white/10 shadow" style="background-color: ${m.outfitColor}">
+                                ${m.name[0]}
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs font-bold text-white group-hover:text-amber-400 transition">${m.name}</span>
+                                    <span class="px-1.5 py-0.2 text-[10px] font-semibold rounded border ${m.badgeClass}">${m.role}</span>
+                                </div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">${m.specialty}</div>
+                            </div>
+                        </div>
+                        <span class="text-[11px] text-slate-500 group-hover:text-amber-400 transition">KPI ➔</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderICArchiveList() {
+            const container = document.getElementById('archive-list-container');
+            const headerBadge = document.getElementById('header-report-count');
+            const sideBadge = document.getElementById('sidebar-report-badge');
+
+            if (headerBadge) headerBadge.textContent = icReports.length;
+            if (sideBadge) sideBadge.textContent = icReports.length;
+            if (!container) return;
+
+            container.innerHTML = icReports.map((rep, idx) => {
+                const ratingBadge = rep.ratingType === 'bullish'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : rep.ratingType === 'bearish'
+                        ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                        : 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+
+                return `
+                    <div onclick="openICReportByIndex(${idx})" class="bg-[#0B0F17] hover:bg-[#192132] border border-[#1E293B] hover:border-amber-500/50 rounded-xl p-3 cursor-pointer transition space-y-1.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${ratingBadge}">${rep.rating}</span>
+                            <span class="text-[10px] text-slate-500 font-mono-num">${rep.timestamp}</span>
+                        </div>
+                        <div class="text-xs font-bold text-slate-100 leading-snug">${rep.topic}</div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-[#1E293B]/80">
+                            <span>R/R：<strong class="text-slate-200 font-mono-num">${rep.riskReward}</strong></span>
+                            <span class="text-amber-400">閱讀決議書 ➔</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.openICReportByIndex = function(idx) {
+            if (icReports[idx]) openICReportModal(icReports[idx]);
+        };
+
+        function openICReportModal(report) {
+            activeReport = report;
+
+            document.getElementById('rep-title').textContent = report.topic;
+            document.getElementById('rep-time').textContent = report.timestamp;
+
+            const srcBadge = document.getElementById('rep-source-badge');
+            if (report.isLiveGrounded) {
+                srcBadge.textContent = 'LIVE GOOGLE SEARCH GROUNDED';
+                srcBadge.className = 'px-2 py-0.5 text-[10px] font-mono-num rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+            } else {
+                srcBadge.textContent = 'INSTITUTIONAL QUANT SYNTHESIS';
+                srcBadge.className = 'px-2 py-0.5 text-[10px] font-mono-num rounded bg-blue-500/15 text-blue-400 border border-blue-500/30';
+            }
+
+            const ratingClass = report.ratingType === 'bullish'
+                ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/40'
+                : report.ratingType === 'bearish'
+                    ? 'text-rose-400 bg-rose-500/15 border-rose-500/40'
+                    : 'text-amber-400 bg-amber-500/15 border-amber-500/40';
+
+            const metricsHtml = (report.metrics || []).map(m => `
+                <div class="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3">
+                    <div class="text-[11px] text-slate-400">${m.label}</div>
+                    <div class="text-sm sm:text-base font-bold text-white font-mono-num mt-0.5">${m.value}</div>
+                    <div class="text-[11px] font-medium mt-0.5 ${m.up ? 'text-emerald-400' : 'text-amber-400'}">${m.note}</div>
+                </div>
+            `).join('');
+
+            const sourcesHtml = (report.sources && report.sources.length > 0)
+                ? `<div class="bg-[#0B0F17] border border-[#1E293B] rounded-xl p-3.5 space-y-2">
+                    <div class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <span>🌐 Google Search 即時聯網參考來源</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        ${report.sources.map(s => `<a href="${s.uri}" target="_blank" rel="noopener noreferrer" class="text-[11px] text-blue-400 hover:underline truncate block">↗ ${s.title}</a>`).join('')}
+                    </div>
+                   </div>`
+                : '';
+
+            document.getElementById('rep-body').innerHTML = `
+                <!-- Top CIO Decision Summary Card -->
+                <div class="bg-gradient-to-br from-[#0B0F17] to-[#161F30] border border-[#334155] rounded-2xl p-4 space-y-3 shadow-lg">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <div class="text-[11px] text-slate-400">投審會最終評級</div>
+                            <div class="inline-block mt-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${ratingClass}">${report.rating}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] text-slate-400">目標區間 / 關鍵點位</div>
+                            <div class="text-xs sm:text-sm font-bold text-white font-mono-num mt-1.5">${report.targetZone}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] text-slate-400">風險報酬比 (Risk/Reward)</div>
+                            <div class="text-xs sm:text-sm font-bold text-amber-400 font-mono-num mt-1.5">${report.riskReward}</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] text-slate-400">建議資金配置水位</div>
+                            <div class="text-xs sm:text-sm font-bold text-emerald-400 mt-1.5">${report.allocation}</div>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-[#1E293B] text-xs sm:text-sm text-slate-200 leading-relaxed">
+                        <strong class="text-amber-400">【決策摘要】</strong>${report.executiveSummary}
+                    </div>
+                </div>
+
+                <!-- 4 Key Quantitative Metrics -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    ${metricsHtml}
+                </div>
+
+                <!-- 4 Analysts Independent Perspectives -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <!-- Sophia -->
+                    <div class="bg-[#0B0F17] border border-rose-500/30 rounded-xl p-3.5 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-rose-300">SOPHIA • 台美科技產業分析師</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">基本面 & 估值</span>
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed">${report.sophiaView}</p>
+                    </div>
+
+                    <!-- Marcus -->
+                    <div class="bg-[#0B0F17] border border-blue-500/30 rounded-xl p-3.5 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-blue-300">MARCUS • 全球總經與利率策略師</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">利率 & 資金流</span>
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed">${report.marcusView}</p>
+                    </div>
+
+                    <!-- Elena (CRO Devil's Advocate) -->
+                    <div class="bg-[#0B0F17] border border-emerald-500/40 rounded-xl p-3.5 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-emerald-300">ELENA • 地緣政治與風控長 (CRO)</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">反方壓力測試</span>
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed">${report.elenaView}</p>
+                    </div>
+
+                    <!-- Victor (CIO Final Order) -->
+                    <div class="bg-[#0B0F17] border border-amber-500/40 rounded-xl p-3.5 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-amber-400">VICTOR • 首席投資長 (CIO)</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">最終操作指令</span>
+                        </div>
+                        <p class="text-xs text-slate-200 leading-relaxed">${report.victorDecision}</p>
+                    </div>
+                </div>
+
+                ${sourcesHtml}
+            `;
+
+            document.getElementById('ic-report-modal').classList.remove('hidden');
+        }
+
+        window.openAnalystProfileModal = function(agentId) {
+            const m = IC_TEAM.find(item => item.id === agentId);
+            if (!m) return;
+
+            document.getElementById('profile-modal-content').innerHTML = `
+                <div class="px-5 py-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold text-white border border-white/15" style="background-color: ${m.outfitColor}">
+                            ${m.name[0]}
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-white">${m.name}</div>
+                            <div class="text-xs text-amber-400 font-semibold">${m.role}</div>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('analyst-profile-modal').classList.add('hidden')" class="text-slate-400 hover:text-white p-1">✕</button>
+                </div>
+                <div class="p-5 space-y-3.5 text-xs">
+                    <div>
+                        <div class="text-slate-400 font-semibold mb-1">機構資歷背景</div>
+                        <div class="bg-[#0B0F17] border border-[#1E293B] rounded-lg p-2.5 text-slate-200">${m.background}</div>
+                    </div>
+                    <div>
+                        <div class="text-slate-400 font-semibold mb-1">核心分析武器與職責</div>
+                        <div class="bg-[#0B0F17] border border-[#1E293B] rounded-lg p-2.5 text-slate-200">${m.specialty}</div>
+                    </div>
+                    <div>
+                        <div class="text-amber-400 font-semibold mb-1">投審會嚴格考核 KPI 標準</div>
+                        <div class="bg-amber-950/20 border border-amber-500/30 rounded-lg p-2.5 text-amber-200 leading-relaxed">${m.kpiStandard}</div>
+                    </div>
+                </div>
+                <div class="px-5 py-3 bg-[#0B0F17] border-t border-[#1E293B] flex justify-end gap-2">
+                    <button onclick="document.getElementById('analyst-profile-modal').classList.add('hidden'); openICReportModal(activeReport);" class="px-3.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-200 text-xs font-semibold">
+                        檢視最新投審會報告
+                    </button>
+                    <button onclick="document.getElementById('analyst-profile-modal').classList.add('hidden')" class="px-4 py-1.5 rounded-lg bg-[#3B82F6] text-white text-xs font-bold">
+                        關閉
+                    </button>
+                </div>
+            `;
+            document.getElementById('analyst-profile-modal').classList.remove('hidden');
+        };
+
+        function generateMarkdownFromReport(rep) {
+            return `# 【AI 投研辦公室 v2.0 投審會決議備忘錄】
+**研究主題**：${rep.topic}
+**決議時間**：${rep.timestamp}
+**投資評級**：${rep.rating}
+**目標區間／關鍵點位**：${rep.targetZone}
+**風險報酬比 (R/R)**：${rep.riskReward}
+**建議資金配置**：${rep.allocation}
+
+---
+
+## 一、 CIO 核心決策摘要
+${rep.executiveSummary}
+
+## 二、 投審會四方獨立觀點
+- **SOPHIA（台美科技產業分析師）**：${rep.sophiaView}
+- **MARCUS（全球總經與利率策略師）**：${rep.marcusView}
+- **ELENA（地緣政治與風控長 CRO）**：${rep.elenaView}
+- **VICTOR（首席投資長 CIO）**：${rep.victorDecision}
+`;
+        }
+
+        function refreshApiStatusIndicators() {
+            const indicator = document.getElementById('api-key-indicator');
+            const modeBadge = document.getElementById('engine-mode-badge');
+            const groundingTag = document.getElementById('grounding-status-tag');
+
+            if (apiConfig.apiKey) {
+                indicator.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10B981]';
+                modeBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span>${apiConfig.model} (自訂金鑰已連線)</span>`;
+            } else {
+                indicator.className = 'w-2 h-2 rounded-full bg-blue-400';
+                modeBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span><span>${apiConfig.model} (內建環境 / 推演模式)</span>`;
+            }
+
+            if (groundingTag) {
+                groundingTag.textContent = apiConfig.useGrounding ? 'SEARCH GROUNDING: ON' : 'SEARCH GROUNDING: OFF';
+                groundingTag.className = apiConfig.useGrounding
+                    ? 'text-[10px] px-2 py-0.5 rounded bg-[#131926] border border-[#1E293B] text-emerald-400 font-mono-num'
+                    : 'text-[10px] px-2 py-0.5 rounded bg-[#131926] border border-[#1E293B] text-slate-400 font-mono-num';
+            }
+        }
+
+        function showToast(msg, icon = '✅') {
+            const box = document.getElementById('toast-box');
+            document.getElementById('toast-text').textContent = msg;
+            document.getElementById('toast-icon').textContent = icon;
+            box.classList.remove('translate-y-12', 'opacity-0');
+            setTimeout(() => box.classList.add('translate-y-12', 'opacity-0'), 3200);
+        }
+
+        /**
+         * ============================================================================
+         * 6. INITIALIZATION & DOM EVENT BINDINGS
+         * ============================================================================
+         */
+        window.addEventListener('DOMContentLoaded', () => {
+            initThreeScene();
+            renderICRoster();
+            renderICArchiveList();
+            refreshApiStatusIndicators();
+
+            // Camera Reset & Depth of Field Toggle
+            document.getElementById('btn-reset-cam').addEventListener('click', () => {
+                camState.azimuth = Math.PI / 4;
+                camState.polar = Math.PI / 3.1;
+                camState.distance = 19.5;
+                camState.target.set(0.4, 1.0, 0.2);
+                updateCameraPosition();
+                showToast('已重置為等角全景視角', '🎥');
+            });
+
+            const btnDof = document.getElementById('btn-toggle-dof');
+            const viewport = document.getElementById('office-viewport');
+            btnDof.addEventListener('click', () => {
+                isDofActive = !isDofActive;
+                viewport.classList.toggle('dof-active', isDofActive);
+                btnDof.className = isDofActive
+                    ? 'px-2.5 py-1.5 rounded-lg bg-[#F59E0B] text-slate-950 text-xs font-bold transition'
+                    : 'px-2.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-xs font-medium transition';
+                showToast(isDofActive ? '已開啟微縮模型景深模式' : '已關閉景深模式', '📷');
+            });
+
+            // Sidebar Tabs & Header History Shortcut
+            const tabConsole = document.getElementById('tab-console');
+            const tabArchive = document.getElementById('tab-archive');
+            const panelConsole = document.getElementById('panel-console');
+            const panelArchive = document.getElementById('panel-archive');
+
+            function switchTab(target) {
+                if (target === 'console') {
+                    tabConsole.className = 'py-1.5 px-3 rounded-lg text-xs font-bold bg-[#1E293B] text-white shadow-sm transition flex items-center justify-center gap-1.5';
+                    tabArchive.className = 'py-1.5 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5';
+                    panelConsole.classList.remove('hidden');
+                    panelArchive.classList.add('hidden');
+                } else {
+                    tabArchive.className = 'py-1.5 px-3 rounded-lg text-xs font-bold bg-[#1E293B] text-white shadow-sm transition flex items-center justify-center gap-1.5';
+                    tabConsole.className = 'py-1.5 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5';
+                    panelArchive.classList.remove('hidden');
+                    panelConsole.classList.add('hidden');
+                }
+            }
+
+            tabConsole.addEventListener('click', () => switchTab('console'));
+            tabArchive.addEventListener('click', () => switchTab('archive'));
+            document.getElementById('btn-header-history').addEventListener('click', () => switchTab('archive'));
+
+            // Start IC Research Button & Preset Topics
+            document.getElementById('btn-start-ic').addEventListener('click', () => {
+                const input = document.getElementById('research-input');
+                runInvestmentCommittee(input.value);
+            });
+
+            document.querySelectorAll('.preset-topic-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const topic = btn.getAttribute('data-topic');
+                    document.getElementById('research-input').value = topic;
+                    runInvestmentCommittee(topic);
+                });
+            });
+
+            // API Settings Modal Controls
+            const apiModal = document.getElementById('api-settings-modal');
+            document.getElementById('btn-open-api-modal').addEventListener('click', () => {
+                document.getElementById('input-api-key').value = apiConfig.apiKey;
+                document.getElementById('select-gemini-model').value = apiConfig.model;
+                document.getElementById('checkbox-grounding').checked = apiConfig.useGrounding;
+                apiModal.classList.remove('hidden');
+            });
+
+            const closeApiModal = () => apiModal.classList.add('hidden');
+            document.getElementById('btn-close-api-modal').addEventListener('click', closeApiModal);
+            document.getElementById('btn-cancel-api').addEventListener('click', closeApiModal);
+
+            document.getElementById('btn-save-api').addEventListener('click', () => {
+                apiConfig.apiKey = document.getElementById('input-api-key').value.trim();
+                apiConfig.model = document.getElementById('select-gemini-model').value;
+                apiConfig.useGrounding = document.getElementById('checkbox-grounding').checked;
+
+                localStorage.setItem('ai_ic_gemini_key', apiConfig.apiKey);
+                localStorage.setItem('ai_ic_gemini_model', apiConfig.model);
+                localStorage.setItem('ai_ic_use_grounding', String(apiConfig.useGrounding));
+
+                refreshApiStatusIndicators();
+                closeApiModal();
+                showToast('Gemini API 與聯網設定已儲存', '⚙️');
+            });
+
+            document.getElementById('btn-clear-api-key').addEventListener('click', () => {
+                apiConfig.apiKey = '';
+                localStorage.removeItem('ai_ic_gemini_key');
+                document.getElementById('input-api-key').value = '';
+                refreshApiStatusIndicators();
+                showToast('已清除儲存的 API Key', '🗑️');
+            });
+
+            // IC Report Modal Close, Copy & Export
+            const closeRepModal = () => document.getElementById('ic-report-modal').classList.add('hidden');
+            document.getElementById('btn-close-report').addEventListener('click', closeRepModal);
+            document.getElementById('btn-done-report').addEventListener('click', closeRepModal);
+            document.getElementById('ic-report-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'ic-report-modal') closeRepModal();
+            });
+
+            document.getElementById('btn-copy-md').addEventListener('click', () => {
+                if (!activeReport) return;
+                const md = generateMarkdownFromReport(activeReport);
+                const ta = document.createElement('textarea');
+                ta.value = md;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('已複製 Markdown 機構投研報告', '📋');
+            });
+
+            document.getElementById('btn-export-md').addEventListener('click', () => {
+                if (!activeReport) return;
+                const md = generateMarkdownFromReport(activeReport);
+                const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `IC_Memo_${activeReport.topic.slice(0, 12)}.md`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('已匯出投審會決議報告 (.md)', '⬇️');
+            });
+        });
+    </script>
+</body>
+</html>
